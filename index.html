@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>スクールタイマー</title>
+  
+  <!-- Tailwind CSS (デザイン用) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM (アプリの基本システム) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel (コード変換用) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Google Fonts & Custom Styles -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;800;900&display=swap');
+    
+    body {
+      font-family: 'M PLUS Rounded 1c', sans-serif;
+    }
+    .font-rounded { font-family: 'M PLUS Rounded 1c', sans-serif; }
+    
+    /* 切り替えアニメーション */
+    @keyframes switch-enter {
+      0% { 
+        opacity: 0; 
+        transform: scale(0.95) translateY(10px) rotateX(10deg); 
+        filter: blur(8px);
+      }
+      100% { 
+        opacity: 1; 
+        transform: scale(1) translateY(0) rotateX(0); 
+        filter: blur(0);
+      }
+    }
+    .animate-switch {
+      animation: switch-enter 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    /* まぶたのアニメーション */
+    @keyframes eyelid-close {
+      0% { height: 0; }
+      100% { height: 51vh; } /* 隙間防止のため少し重ねる */
+    }
+    @keyframes eyelid-open {
+      0% { height: 51vh; }
+      100% { height: 0; }
+    }
+    .animate-eyelid-close {
+      animation: eyelid-close 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    .animate-eyelid-open {
+      animation: eyelid-open 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+
+    /* コンテンツのフェード */
+    .meditation-content {
+      transition: opacity 1s ease-in-out;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // --- アイコンコンポーネント ---
+    const Icon = ({ children, ...props }) => (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        {...props}
+      >
+        {children}
+      </svg>
+    );
+
+    const Settings = (props) => <Icon {...props}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></Icon>;
+    const X = (props) => <Icon {...props}><path d="M18 6 6 18" /><path d="m6 6 12 12" /></Icon>;
+    const Check = (props) => <Icon {...props}><path d="M20 6 9 17l-5-5" /></Icon>;
+    const Calendar = (props) => <Icon {...props}><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></Icon>;
+    const Bell = (props) => <Icon {...props}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></Icon>;
+    const Edit2 = (props) => <Icon {...props}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></Icon>;
+    const Save = (props) => <Icon {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></Icon>;
+    const Trash2 = (props) => <Icon {...props}><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></Icon>;
+    const Plus = (props) => <Icon {...props}><path d="M5 12h14" /><path d="M12 5v14" /></Icon>;
+    const Moon = (props) => <Icon {...props}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></Icon>;
+    const Sun = (props) => <Icon {...props}><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></Icon>;
+    const EyeOff = (props) => <Icon {...props}><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" /><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" /><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" /><line x1="2" x2="22" y1="2" y2="22" /></Icon>;
+    const RefreshCw = (props) => <Icon {...props}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></Icon>;
+    const Lock = (props) => <Icon {...props}><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></Icon>;
+
+    // --- タイプ定義 ---
+    const TYPE_CONFIG = {
+      before: { label: '始業前', color: 'bg-green-100 dark:bg-green-900/30', border: 'border-green-300 dark:border-green-700', icon: '🌅', timer: 'fill-green-400 dark:fill-green-600', badge: 'text-green-800 dark:text-green-300' },
+      class: { label: '授業', color: 'bg-red-100 dark:bg-red-900/30', border: 'border-red-300 dark:border-red-700', icon: '📖', timer: 'fill-red-400 dark:fill-red-600', badge: 'text-red-800 dark:text-red-300' },
+      activity: { label: '活動', color: 'bg-blue-100 dark:bg-blue-900/30', border: 'border-blue-300 dark:border-blue-700', icon: '🏃', timer: 'fill-blue-400 dark:fill-blue-600', badge: 'text-blue-800 dark:text-blue-300' },
+      break: { label: '休み', color: 'bg-green-100 dark:bg-green-900/30', border: 'border-green-300 dark:border-green-700', icon: '☕', timer: 'fill-green-400 dark:fill-green-600', badge: 'text-green-800 dark:text-green-300' },
+      end: { label: '終了', color: 'bg-slate-200 dark:bg-slate-700', border: 'border-slate-300 dark:border-slate-600', icon: '🏁', timer: 'fill-gray-200 dark:fill-slate-600', badge: 'text-slate-600 dark:text-slate-300' },
+    };
+
+    // --- ヘルパー関数 ---
+
+    const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
+      const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+      return {
+        x: centerX + (radius * Math.cos(angleInRadians)),
+        y: centerY + (radius * Math.sin(angleInRadians))
+      };
+    };
+
+    const describeArc = (x, y, radius, startAngle, endAngle) => {
+      if (Math.abs(startAngle - endAngle) < 0.01) return "";
+
+      if (endAngle < startAngle) {
+        endAngle += 360;
+      }
+      
+      if (endAngle - startAngle >= 360) {
+        endAngle = startAngle + 359.99;
+      }
+
+      const start = polarToCartesian(x, y, radius, endAngle);
+      const end = polarToCartesian(x, y, radius, startAngle);
+      const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+
+      return [
+        "M", x, y,
+        "L", start.x, start.y,
+        "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y,
+        "L", x, y
+      ].join(" ");
+    };
+
+    const timeToMinutes = (timeStr) => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const minutesToTime = (minutes) => {
+      let m = minutes;
+      while (m < 0) m += 24 * 60; 
+      while (m >= 24 * 60) m -= 24 * 60;
+      
+      const h = Math.floor(m / 60);
+      const min = m % 60;
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    };
+
+    const formatTime12 = (date) => {
+      let hours = date.getHours();
+      const minutes = date.getMinutes();
+      hours = hours % 12;
+      hours = hours ? hours : 12; 
+      return `${hours}時${minutes.toString().padStart(2, '0')}分`;
+    };
+
+    // --- 初期データ定義 ---
+
+    const DEFAULT_SCHEDULE_ITEMS = [
+      { id: 'd1', time: '07:00', label: '朝のじゅんび', type: 'before' }, 
+      { id: 'd2', time: '08:00', label: '朝の会', type: 'class' },
+      { id: 'd3', time: '08:10', label: '朝の時間', type: 'class' },
+      { id: 'd4', time: '08:25', label: 'じゅんび', type: 'break' },
+      { id: 'd5', time: '08:30', label: '１時間目', type: 'class' },
+      { id: 'd6', time: '09:15', label: 'じゅんび', type: 'break' },
+      { id: 'd7', time: '09:25', label: '２時間目', type: 'class' },
+      { id: 'd8', time: '10:10', label: 'じゅんび', type: 'break' },
+      { id: 'd9', time: '10:20', label: '３時間目', type: 'class' },
+      { id: 'd10', time: '11:05', label: 'じゅんび', type: 'break' },
+      { id: 'd11', time: '11:15', label: '４時間目', type: 'class' },
+      { id: 'd12', time: '12:00', label: '給食', type: 'class' },
+      { id: 'd13', time: '12:50', label: '昼休み', type: 'break' },
+      { id: 'd14', time: '13:25', label: 'じゅんび', type: 'break' },
+      { id: 'd15', time: '13:35', label: '５時間目', type: 'class' },
+      { id: 'd16', time: '14:20', label: 'じゅんび', type: 'break' },
+      { id: 'd17', time: '14:30', label: '６時間目', type: 'class' },
+      { id: 'd18', time: '15:15', label: '下校', type: 'end' },
+    ];
+
+    const generateTestSchedule = () => {
+      const items = [];
+      let currentHour = 0;
+      let currentMinute = 0;
+      let count = 1;
+
+      items.push({ id: `test_start`, time: '00:00', label: '開発用開始', type: 'before' });
+
+      while (currentHour < 24) {
+        const startStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+        items.push({ id: `test_c_${count}`, time: startStr, label: `テスト授業 ${count}`, type: 'class' });
+
+        currentMinute += 45;
+        if (currentMinute >= 60) {
+          currentHour += Math.floor(currentMinute / 60);
+          currentMinute %= 60;
+        }
+        if (currentHour >= 24) break;
+
+        const breakStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+        items.push({ id: `test_b_${count}`, time: breakStr, label: `休憩`, type: 'break' });
+
+        currentMinute += 10;
+        if (currentMinute >= 60) {
+          currentHour += Math.floor(currentMinute / 60);
+          currentMinute %= 60;
+        }
+        count++;
+      }
+      items.push({ id: `test_end`, time: '23:55', label: 'リセット', type: 'end' });
+      
+      if(items.length > 1) {
+         const firstEventTime = timeToMinutes(items[1].time);
+         items[0].time = minutesToTime(firstEventTime - 60);
+      }
+      
+      return items;
+    };
+
+    const INITIAL_DATA = {
+      schedules: [
+        { id: 'mon', name: '月曜日', items: DEFAULT_SCHEDULE_ITEMS },
+        { id: 'tue', name: '火曜日', items: DEFAULT_SCHEDULE_ITEMS },
+        { id: 'wed', name: '水曜日', items: DEFAULT_SCHEDULE_ITEMS },
+        { id: 'thu', name: '木曜日', items: DEFAULT_SCHEDULE_ITEMS },
+        { id: 'fri', name: '金曜日', items: DEFAULT_SCHEDULE_ITEMS },
+        { id: 'special', name: '特別日課 (短縮)', items: [
+          { id: 's1', time: '07:30', label: '朝の会', type: 'before' },
+          { id: 's2', time: '08:30', label: '1時間目', type: 'class' },
+          { id: 's3', time: '09:10', label: '休み', type: 'break' },
+          { id: 's4', time: '09:15', label: '2時間目', type: 'class' },
+          { id: 's5', time: '09:55', label: '下校指導', type: 'activity' },
+          { id: 's6', time: '10:15', label: '下校', type: 'end' },
+        ]},
+        { id: 'test_dev', name: '★テスト開発用 (24h)', items: generateTestSchedule() }
+      ],
+      selectedScheduleId: 'mon',
+      lastDate: null,
+      isDarkMode: false,
+      isMeditationEnabled: true, 
+      scheduleMode: 'auto', // 'auto' | 'manual'
+    };
+
+    // --- スケジュール計算ロジック ---
+    const getCurrentStatus = (now, items) => {
+      if (!items || !Array.isArray(items)) return { type: 'finished' };
+
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const currentSeconds = now.getSeconds();
+      const nowTotalSeconds = nowMin * 60 + currentSeconds;
+      
+      const sortedItems = [...items].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+
+      for (let i = 0; i < sortedItems.length - 1; i++) {
+        const currentItem = sortedItems[i];
+        const nextItem = sortedItems[i + 1];
+        
+        const startTime = timeToMinutes(currentItem.time);
+        const endTime = timeToMinutes(nextItem.time);
+        
+        if (nowMin >= startTime && nowMin < endTime) {
+          const isBreak = currentItem.type === 'break';
+          const isEnd = currentItem.type === 'end';
+          const isBefore = currentItem.type === 'before';
+          
+          let type = 'active';
+          if (isEnd) type = 'finished';
+          else if (isBreak) type = 'break';
+          else if (isBefore) type = 'before_start';
+
+          const endTimeInSeconds = endTime * 60;
+          const remainingSeconds = endTimeInSeconds - nowTotalSeconds;
+          const remainingMinutes = Math.ceil(remainingSeconds / 60);
+
+          return {
+            type: type,
+            item: currentItem,
+            nextItem: nextItem,
+            startTime,
+            endTime,
+            remaining: remainingMinutes,
+            remainingSeconds: remainingSeconds, 
+            progress: (nowMin - startTime) / (endTime - startTime),
+            endMinute: parseInt(nextItem.time.split(':')[1]),
+          };
+        }
+      }
+
+      const firstStart = timeToMinutes(sortedItems[0].time);
+      if (nowMin < firstStart) {
+        const firstStartSeconds = firstStart * 60;
+        const remainingSeconds = firstStartSeconds - nowTotalSeconds;
+        return { 
+          type: 'before_start', 
+          item: sortedItems[0], 
+          nextItem: sortedItems[1], 
+          remainingToStart: Math.ceil(remainingSeconds / 60), 
+          remainingSeconds: remainingSeconds
+        };
+      }
+
+      return { type: 'finished' };
+    };
+
+    // --- メインコンポーネント ---
+    function App() {
+      const [time, setTime] = useState(new Date());
+      const [appData, setAppData] = useState(INITIAL_DATA);
+      const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+      const [editingScheduleId, setEditingScheduleId] = useState(null);
+      const [editingItems, setEditingItems] = useState([]);
+      const [editingName, setEditingName] = useState("");
+      
+      // 黙想用ステート (idle, closing, active, opening)
+      const [meditationPhase, setMeditationPhase] = useState('idle');
+      const prevItemIdRef = useRef(null);
+      const isFirstRender = useRef(true);
+      const ignoreChangeRef = useRef(false); // 設定変更によるトリガー無視用
+
+      // 今日の日付文字列（メモ化してuseEffectの依存配列で使用）
+      const todayStr = useMemo(() => time.toDateString(), [time]);
+
+      useEffect(() => {
+        try {
+          const savedData = localStorage.getItem('school-timer-data');
+          let data = savedData ? JSON.parse(savedData) : JSON.parse(JSON.stringify(INITIAL_DATA));
+
+          if (!data || !Array.isArray(data.schedules) || data.schedules.length === 0) {
+            data = JSON.parse(JSON.stringify(INITIAL_DATA));
+          }
+          
+          if (data.isMeditationEnabled === undefined) data.isMeditationEnabled = true;
+          if (data.scheduleMode === undefined) data.scheduleMode = 'auto'; // 新規追加
+
+          // 初期ロード時の日付チェック
+          if (data.lastDate !== todayStr) {
+            if (data.scheduleMode === 'auto') {
+              const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+              const todayId = dayMap[new Date().getDay()];
+              if (data.schedules.find(s => s.id === todayId)) {
+                data.selectedScheduleId = todayId;
+              }
+            }
+            data.lastDate = todayStr;
+            ignoreChangeRef.current = true; // 初期ロードでは黙想しない
+            localStorage.setItem('school-timer-data', JSON.stringify(data));
+          }
+
+          setAppData(data);
+        } catch (e) {
+          console.error("Failed to load data", e);
+          setAppData(INITIAL_DATA);
+        }
+
+        const timer = setInterval(() => setTime(new Date()), 30);
+        return () => clearInterval(timer);
+      }, []);
+
+      // 日付変更時の自動追従ロジック
+      useEffect(() => {
+        if (appData.lastDate !== todayStr) {
+          // 日付が変わった
+          const newData = { ...appData, lastDate: todayStr };
+          
+          if (appData.scheduleMode === 'auto') {
+            const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+            const todayId = dayMap[new Date().getDay()];
+            
+            if (appData.schedules.find(s => s.id === todayId)) {
+              newData.selectedScheduleId = todayId;
+              // 日付変更による日課変更なので、黙想は許可する（ignoreChangeRefを立てない）
+            }
+          }
+          
+          setAppData(newData);
+          localStorage.setItem('school-timer-data', JSON.stringify(newData));
+        }
+      }, [todayStr, appData]);
+
+      useEffect(() => {
+        if (editingScheduleId) {
+          const sch = appData.schedules.find(s => s.id === editingScheduleId);
+          if (sch) setEditingName(sch.name);
+        }
+      }, [editingScheduleId, appData.schedules]);
+
+      const saveToLocalStorage = (newData) => {
+        ignoreChangeRef.current = true; // 設定変更時は黙想しない
+        setAppData(newData);
+        localStorage.setItem('school-timer-data', JSON.stringify(newData));
+      };
+
+      const toggleDarkMode = () => {
+        const newData = { ...appData, isDarkMode: !appData.isDarkMode };
+        saveToLocalStorage(newData);
+      };
+      
+      const toggleMeditation = () => {
+        const newData = { ...appData, isMeditationEnabled: !appData.isMeditationEnabled };
+        saveToLocalStorage(newData);
+      };
+
+      const changeScheduleMode = (mode) => {
+        let newData = { ...appData, scheduleMode: mode };
+        
+        // 自動モードにした瞬間、強制的に今日の日課にする
+        if (mode === 'auto') {
+          const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+          const todayId = dayMap[new Date().getDay()];
+          if (appData.schedules.find(s => s.id === todayId)) {
+            newData.selectedScheduleId = todayId;
+          }
+        }
+        
+        saveToLocalStorage(newData);
+      };
+
+      const currentSchedule = appData.schedules.find(s => s.id === appData.selectedScheduleId) || appData.schedules[0] || INITIAL_DATA.schedules[0];
+      const status = getCurrentStatus(time, currentSchedule.items);
+
+      // --- 黙想トリガーロジック ---
+      useEffect(() => {
+        if (isFirstRender.current) {
+          prevItemIdRef.current = status.item?.id;
+          isFirstRender.current = false;
+          return;
+        }
+
+        if (ignoreChangeRef.current) {
+          ignoreChangeRef.current = false;
+          prevItemIdRef.current = status.item?.id;
+          return;
+        }
+
+        if (status.item?.id && prevItemIdRef.current && prevItemIdRef.current !== status.item.id) {
+          if (appData.isMeditationEnabled && status.type !== 'finished' && status.type !== 'end') {
+            setMeditationPhase('closing');
+            setTimeout(() => {
+              setMeditationPhase('active');
+              setTimeout(() => {
+                setMeditationPhase('opening');
+                setTimeout(() => {
+                  setMeditationPhase('idle');
+                }, 1500); 
+              }, 20000); 
+            }, 1500);
+          }
+        }
+        prevItemIdRef.current = status.item?.id;
+      }, [status.item?.id, appData.isMeditationEnabled, status.type, appData]); 
+
+
+      const milliseconds = time.getMilliseconds();
+      const seconds = time.getSeconds();
+      const minutes = time.getMinutes();
+      const hours = time.getHours();
+
+      const smoothSeconds = seconds + milliseconds / 1000;
+      const secondAngle = smoothSeconds * 6;
+      const minuteAngle = minutes * 6 + seconds * 0.1;
+      const hourAngle = (hours % 12) * 30 + minutes * 0.5;
+
+      let timerPath = null;
+      let timerColor = "fill-gray-200 dark:fill-slate-700";
+      
+      const shouldShowTimer = ['active', 'break', 'before_start'].includes(status.type) && status.endMinute !== undefined;
+
+      if (shouldShowTimer) {
+        if ((status.type === 'break' || status.type === 'before_start') && status.remainingSeconds <= 60) {
+          timerPath = describeArc(100, 100, 90, secondAngle, 0);
+          timerColor = "fill-yellow-400 dark:fill-yellow-500";
+        } 
+        else {
+          const endMinuteAngle = status.endMinute * 6;
+          timerPath = describeArc(100, 100, 90, minuteAngle, endMinuteAngle);
+          
+          if (status.item.type === 'class') {
+             timerColor = TYPE_CONFIG.class.timer;
+          } else if (status.item.type === 'activity') {
+             timerColor = TYPE_CONFIG.activity.timer;
+          } else {
+             timerColor = TYPE_CONFIG.break.timer;
+          }
+        }
+      }
+
+      let timeTextColorClass = appData.isDarkMode ? "text-slate-100" : "text-slate-800";
+      
+      if (status.type === 'active' && status.item?.type === 'class') {
+        timeTextColorClass = appData.isDarkMode ? "text-slate-600" : "text-slate-300";
+      } else if ((status.type === 'break' || status.type === 'before_start') && status.remainingSeconds <= 60) {
+        timeTextColorClass = "text-red-500 animate-pulse";
+      }
+
+      const startEditing = (scheduleId) => {
+        const schedule = appData.schedules.find(s => s.id === scheduleId);
+        if (!schedule) return;
+        setEditingScheduleId(scheduleId);
+        setEditingItems(JSON.parse(JSON.stringify(schedule.items)));
+      };
+
+      const handleItemChange = (index, field, value) => {
+        const newItems = [...editingItems];
+        newItems[index] = { ...newItems[index], [field]: value };
+        setEditingItems(newItems);
+      };
+
+      const addNewItem = () => {
+        let newTime = "00:00";
+        if (editingItems.length > 0) {
+           const lastItem = editingItems[editingItems.length - 1];
+           newTime = lastItem.time; 
+        }
+        setEditingItems([
+          ...editingItems, 
+          { id: Date.now().toString(), time: newTime, label: '新しい予定', type: 'class' }
+        ]);
+      };
+
+      const deleteItem = (index) => {
+        if (index === 0) return;
+        const newItems = [...editingItems];
+        newItems.splice(index, 1);
+        setEditingItems(newItems);
+      };
+
+      const saveEditingWithMeta = () => {
+        const startItem = editingItems[0];
+        const otherItems = editingItems.slice(1);
+        otherItems.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+
+        if (otherItems.length > 0) {
+          const firstEventTime = timeToMinutes(otherItems[0].time);
+          startItem.time = minutesToTime(firstEventTime - 60);
+        }
+        const sortedItems = [startItem, ...otherItems];
+
+        const newSchedules = appData.schedules.map(s => {
+          if (s.id === editingScheduleId) {
+            return { ...s, items: sortedItems, name: editingName };
+          }
+          return s;
+        });
+        
+        saveToLocalStorage({ ...appData, schedules: newSchedules });
+        setEditingScheduleId(null);
+      };
+
+      const handleSelectSchedule = (id) => {
+        // もし自動モード中に手動で選択されたら、自動的に手動モードに切り替える
+        let newData = { ...appData, selectedScheduleId: id };
+        if (appData.scheduleMode === 'auto') {
+          if (confirm("現在「通常校時（自動）」モードです。「特別校時（手動）」モードに切り替えてこの日課を表示しますか？")) {
+            newData.scheduleMode = 'manual';
+          } else {
+            return; // キャンセル
+          }
+        }
+        saveToLocalStorage(newData);
+        setIsSettingsOpen(false);
+      };
+
+      const addNewSchedule = () => {
+        const newId = `custom_${Date.now()}`;
+        const newSchedule = {
+          id: newId,
+          name: '新しい日課',
+          items: [
+            { id: `${newId}_1`, time: '08:00', label: '始業前', type: 'before' },
+            { id: `${newId}_2`, time: '09:00', label: '1時間目', type: 'class' },
+            { id: `${newId}_3`, time: '10:00', label: '終了', type: 'end' }
+          ]
+        };
+        const updatedSchedules = [...appData.schedules, newSchedule];
+        saveToLocalStorage({ ...appData, schedules: updatedSchedules });
+        setEditingScheduleId(newId);
+        setEditingItems(newSchedule.items);
+      };
+
+      const deleteSchedule = (id) => {
+        if (!window.confirm("この日課を削除してもよろしいですか？")) return;
+        
+        const updatedSchedules = appData.schedules.filter(s => s.id !== id);
+        let newSelectedId = appData.selectedScheduleId;
+        
+        if (appData.selectedScheduleId === id) {
+          newSelectedId = 'mon';
+        }
+        
+        saveToLocalStorage({ ...appData, schedules: updatedSchedules, selectedScheduleId: newSelectedId });
+      };
+
+      const PROTECTED_IDS = ['mon', 'tue', 'wed', 'thu', 'fri'];
+
+      const containerClass = appData.isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800';
+      const cardClass = appData.isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200';
+      const subTextClass = appData.isDarkMode ? 'text-slate-400' : 'text-slate-500';
+      const clockFaceClass = appData.isDarkMode ? '#1e293b' : 'white';
+      const clockStrokeClass = appData.isDarkMode ? '#cbd5e1' : '#e2e8f0';
+      const tickClass = appData.isDarkMode ? '#94a3b8' : '#1e293b';
+
+      return (
+        <div className={`min-h-screen font-sans selection:bg-blue-200 overflow-hidden transition-colors duration-300 ${containerClass}`}>
+          
+          {/* まぶたアニメーション & 黙想コンテンツ */}
+          {meditationPhase !== 'idle' && (
+            <>
+              <div 
+                className={`fixed top-0 left-0 w-full bg-black z-50 ${meditationPhase === 'closing' ? 'animate-eyelid-close' : meditationPhase === 'opening' ? 'animate-eyelid-open' : 'h-[51vh]'}`}
+              ></div>
+              <div 
+                className={`fixed bottom-0 left-0 w-full bg-black z-50 ${meditationPhase === 'closing' ? 'animate-eyelid-close' : meditationPhase === 'opening' ? 'animate-eyelid-open' : 'h-[51vh]'}`}
+              ></div>
+              <div 
+                className={`fixed inset-0 z-50 flex flex-col items-center justify-center text-white meditation-content pointer-events-none ${meditationPhase === 'active' ? 'opacity-100' : 'opacity-0'}`}
+              >
+                <div className="mb-8 opacity-90">
+                  <EyeOff width={150} height={150} strokeWidth={1} />
+                </div>
+                <h1 className="text-8xl font-black font-rounded tracking-widest relative">
+                  <span className="absolute -top-10 left-0 w-full text-center text-3xl font-normal text-slate-400 tracking-normal">もくそう</span>
+                  黙想
+                </h1>
+              </div>
+            </>
+          )}
+
+          <div className="w-full h-screen flex flex-col lg:flex-row overflow-hidden">
+            
+            {/* 左半分：アナログ時計エリア */}
+            <div className={`w-full lg:w-2/3 h-1/2 lg:h-full relative border-b lg:border-r transition-colors duration-300 ${appData.isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+               <div className="absolute inset-0 flex items-center justify-center p-2">
+                 <svg viewBox="0 0 200 200" className="w-auto h-full max-w-full drop-shadow-xl">
+                    <circle cx="100" cy="100" r="98" fill={clockFaceClass} stroke={clockStrokeClass} strokeWidth="1" />
+                    {[...Array(60)].map((_, i) => (
+                      <line key={`min-${i}`} x1="100" y1="5" x2="100" y2={i % 5 === 0 ? "12" : "8"}
+                        stroke={i % 5 === 0 ? tickClass : (appData.isDarkMode ? '#475569' : '#cbd5e1')} 
+                        strokeWidth={i % 5 === 0 ? "2" : "1"}
+                        transform={`rotate(${i * 6} 100 100)`}
+                      />
+                    ))}
+                    {timerPath && (
+                      <g className="mix-blend-multiply" style={{ mixBlendMode: appData.isDarkMode ? 'screen' : 'multiply' }}>
+                        <path d={timerPath} className={`${timerColor} opacity-70`} />
+                      </g>
+                    )}
+                    {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((num, i) => {
+                        const rad = (i * 30 - 90) * (Math.PI / 180);
+                        const x = 100 + 75 * Math.cos(rad);
+                        const y = 100 + 75 * Math.sin(rad);
+                        return <text key={num} x={x} y={y} textAnchor="middle" dominantBaseline="middle" className={`text-[14px] font-bold font-mono ${appData.isDarkMode ? 'fill-slate-400' : 'fill-slate-400'}`}>{num}</text>;
+                    })}
+                    <line x1="100" y1="100" x2="100" y2="55" stroke={appData.isDarkMode ? '#e2e8f0' : '#334155'} strokeWidth="5" strokeLinecap="round" transform={`rotate(${hourAngle} 100 100)`} />
+                    <line x1="100" y1="100" x2="100" y2="35" stroke={appData.isDarkMode ? '#cbd5e1' : '#475569'} strokeWidth="3" strokeLinecap="round" transform={`rotate(${minuteAngle} 100 100)`} />
+                    <line x1="100" y1="100" x2="100" y2="25" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" transform={`rotate(${secondAngle} 100 100)`} />
+                    <circle cx="100" cy="100" r="3" fill="#ef4444" stroke={appData.isDarkMode ? '#1e293b' : 'white'} strokeWidth="1" />
+                  </svg>
+               </div>
+            </div>
+
+            {/* 右半分：情報エリア */}
+            <div className={`w-full lg:w-1/3 h-1/2 lg:h-full flex flex-col relative transition-colors duration-300 ${appData.isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
+              
+              <button 
+                onClick={() => setIsSettingsOpen(true)}
+                className={`absolute top-4 right-4 z-10 p-2 rounded-full shadow-sm transition-all border ${appData.isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white/80 border-slate-200 text-slate-500 hover:bg-white'}`}
+                title="設定・編集"
+              >
+                <Settings size={20} />
+              </button>
+
+              <div className="flex-grow flex flex-col items-center justify-center p-6 gap-8">
+                 <div className="text-center space-y-4 w-full">
+                   <div className={`flex justify-center items-center gap-2 text-xl font-bold font-rounded ${subTextClass}`}>
+                      <Calendar className="text-blue-500 mb-0.5" size={20} />
+                      {time.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
+                   </div>
+                   <div className={`text-5xl lg:text-6xl font-black font-rounded tracking-wide rounded-2xl py-4 px-8 shadow-sm border inline-block whitespace-nowrap transition-colors duration-300 ${cardClass} ${appData.isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>
+                      {formatTime12(time)}
+                   </div>
+                 </div>
+
+                 {['active', 'break', 'before_start'].includes(status.type) && status.item ? (
+                    <div 
+                      key={`${status.item.id}-${status.type}`}
+                      className={`w-full rounded-3xl shadow-lg border p-8 flex flex-col items-center text-center animate-switch transition-colors duration-300 ${cardClass}`}
+                    >
+                      <h2 className={`text-5xl font-black mb-6 leading-tight break-words w-full font-rounded ${appData.isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>
+                        {status.item.label}
+                      </h2>
+                      <div className={`flex flex-col items-center rounded-2xl p-6 w-full border ${appData.isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        <span className={`text-sm font-bold mb-1 font-rounded ${subTextClass}`}>
+                          {status.type === 'active' ? '終了まで' : '開始まで'}
+                        </span>
+                        <div className="flex items-baseline gap-2 justify-center flex-wrap">
+                          <span className={`text-8xl leading-none font-black font-rounded tracking-tighter ${timeTextColorClass}`}>
+                            {status.remaining || status.remainingToStart}
+                          </span>
+                          <span className={`text-2xl font-bold font-rounded ${timeTextColorClass}`}>分</span>
+                        </div>
+                      </div>
+                    </div>
+                 ) : (
+                    <div className={`py-10 text-center font-rounded ${subTextClass}`}>
+                      <Bell size={48} className="mx-auto mb-4 opacity-30" />
+                      <p className="text-2xl font-bold">本日の日課は終了</p>
+                    </div>
+                 )}
+              </div>
+
+            </div>
+          </div>
+
+          {isSettingsOpen && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className={`w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden font-rounded ${appData.isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}`}>
+                <div className={`p-5 border-b flex justify-between items-center ${appData.isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <Settings className="text-blue-600" /> 設定・編集
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={toggleMeditation}
+                      className={`p-2 rounded-full transition-colors flex items-center gap-2 px-3 text-sm font-bold border ${appData.isMeditationEnabled ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'bg-slate-100 border-slate-200 text-slate-400'}`}
+                      title="黙想機能のオンオフ"
+                    >
+                      {appData.isMeditationEnabled ? <EyeOff size={18} /> : <EyeOff size={18} className="opacity-50" />}
+                      黙想 {appData.isMeditationEnabled ? 'ON' : 'OFF'}
+                    </button>
+                    <button 
+                      onClick={toggleDarkMode}
+                      className={`p-2 rounded-full transition-colors flex items-center gap-2 px-3 text-sm font-bold border ${appData.isDarkMode ? 'bg-slate-700 border-slate-600 text-yellow-400 hover:bg-slate-600' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}
+                      title="ダークモード切替"
+                    >
+                      {appData.isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                      {appData.isDarkMode ? 'ライト' : 'ダーク'}
+                    </button>
+                    <button onClick={() => setIsSettingsOpen(false)} className={`p-2 rounded-full ${appData.isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}><X size={24} /></button>
+                  </div>
+                </div>
+
+                <div className="flex flex-grow overflow-hidden">
+                  <div className={`w-1/3 border-r overflow-y-auto p-4 space-y-2 ${appData.isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+                    
+                    {/* 日課モード切替スイッチ */}
+                    <div className={`p-3 rounded-xl border-2 mb-4 flex flex-col gap-2 ${appData.isDarkMode ? 'border-slate-600 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${subTextClass}`}>日課モード設定</span>
+                      <div className="flex bg-slate-200 dark:bg-slate-700 rounded-lg p-1">
+                        <button
+                          onClick={() => changeScheduleMode('auto')}
+                          className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${appData.scheduleMode === 'auto' ? 'bg-white text-blue-600 shadow dark:bg-slate-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}
+                        >
+                          通常校時 (自動)
+                        </button>
+                        <button
+                          onClick={() => changeScheduleMode('manual')}
+                          className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${appData.scheduleMode === 'manual' ? 'bg-white text-blue-600 shadow dark:bg-slate-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}
+                        >
+                          特別校時 (手動)
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        {appData.scheduleMode === 'auto' 
+                          ? '※曜日に合わせて自動で日課が切り替わります' 
+                          : '※選択した日課で固定されます'}
+                      </p>
+                    </div>
+
+                    {appData.schedules.map((sch) => (
+                      <div key={sch.id} className="flex flex-col gap-2 group">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              if (editingScheduleId && !confirm("編集中の内容を破棄しますか？")) return;
+                              setEditingScheduleId(null);
+                              handleSelectSchedule(sch.id);
+                            }}
+                            disabled={appData.scheduleMode === 'auto' && appData.selectedScheduleId !== sch.id}
+                            className={`flex-grow p-3 rounded-xl text-left border-2 flex justify-between items-center transition-all ${
+                              appData.selectedScheduleId === sch.id 
+                                ? 'bg-blue-600 border-blue-600 text-white' 
+                                : appData.scheduleMode === 'auto'
+                                  ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400'
+                                  : appData.isDarkMode 
+                                    ? 'bg-slate-800 border-slate-600 hover:border-slate-500 text-slate-200'
+                                    : 'bg-white border-slate-200 hover:border-blue-300'
+                            }`}
+                          >
+                            <span className="font-bold text-sm truncate">{sch.name}</span>
+                            {appData.selectedScheduleId === sch.id && <Check size={16} />}
+                          </button>
+                          
+                          {!PROTECTED_IDS.includes(sch.id) && (
+                            <button 
+                              onClick={() => deleteSchedule(sch.id)}
+                              className={`p-2 rounded-xl border-2 flex items-center justify-center transition-colors ${
+                                appData.isDarkMode 
+                                  ? 'bg-slate-800 border-slate-600 text-slate-400 hover:text-red-400 hover:border-red-900 hover:bg-red-900/20' 
+                                  : 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50'
+                              }`}
+                              title="日課を削除"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                        
+                        <button 
+                           onClick={() => startEditing(sch.id)}
+                           disabled={editingScheduleId === sch.id}
+                           className={`text-xs p-1.5 rounded border text-center transition-colors ${
+                             editingScheduleId === sch.id 
+                               ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300' 
+                               : appData.isDarkMode
+                                 ? 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                 : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                           }`}
+                        >
+                          内容を編集
+                        </button>
+                      </div>
+                    ))}
+                    
+                    <button 
+                      onClick={addNewSchedule}
+                      className={`w-full mt-4 py-3 border-2 border-dashed rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                        appData.isDarkMode
+                          ? 'border-slate-600 text-slate-400 hover:border-blue-500 hover:text-blue-400 hover:bg-slate-800'
+                          : 'border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+                      }`}
+                    >
+                      <Plus size={18} /> 新しい日課を追加
+                    </button>
+                  </div>
+
+                  <div className={`w-2/3 flex flex-col ${appData.isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                    {editingScheduleId ? (
+                      <>
+                        <div className={`p-4 border-b flex justify-between items-center ${appData.isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+                          <div className="flex-grow mr-4">
+                            <label className={`text-xs block mb-1 ${subTextClass}`}>日課名</label>
+                            <input 
+                              type="text" 
+                              value={editingName} 
+                              onChange={(e) => setEditingName(e.target.value)}
+                              className={`w-full p-1.5 rounded border text-sm font-bold ${
+                                appData.isDarkMode 
+                                  ? 'bg-slate-700 border-slate-600 text-slate-100 focus:border-blue-500' 
+                                  : 'bg-white border-slate-300 text-slate-800 focus:border-blue-500'
+                              }`}
+                            />
+                          </div>
+                          <div className="flex gap-2 items-end">
+                            <button onClick={() => setEditingScheduleId(null)} className={`px-3 py-2 text-xs font-bold rounded ${appData.isDarkMode ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-200'}`}>キャンセル</button>
+                            <button onClick={saveEditingWithMeta} className="px-3 py-2 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 shadow-lg"><Save size={14} /> 保存</button>
+                          </div>
+                        </div>
+
+                        <div className="flex-grow overflow-y-auto p-4">
+                          <div className="space-y-2">
+                            {editingItems.map((item, index) => (
+                              <div key={index} className={`grid grid-cols-12 gap-2 items-center p-2 rounded border transition-colors ${
+                                index === 0 
+                                  ? (appData.isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200') 
+                                  : (appData.isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200')
+                              }`}>
+                                <div className="col-span-3">
+                                  {index === 0 ? (
+                                    <div className={`w-full p-1.5 text-xs italic text-center ${subTextClass}`}>
+                                      (自動設定)
+                                    </div>
+                                  ) : (
+                                    <input 
+                                      type="time" 
+                                      value={item.time} 
+                                      onChange={(e) => handleItemChange(index, 'time', e.target.value)}
+                                      className={`w-full p-1.5 rounded border text-sm font-mono ${
+                                        appData.isDarkMode 
+                                          ? 'bg-slate-700 border-slate-600 text-slate-100' 
+                                          : 'bg-white border-slate-300'
+                                      }`}
+                                    />
+                                  )}
+                                </div>
+                                <div className="col-span-3">
+                                  <select
+                                    value={item.type}
+                                    disabled={index === 0}
+                                    onChange={(e) => handleItemChange(index, 'type', e.target.value)}
+                                    className={`w-full p-1.5 rounded border text-xs disabled:opacity-50 ${
+                                      appData.isDarkMode 
+                                        ? 'bg-slate-700 border-slate-600 text-slate-100' 
+                                        : 'bg-white border-slate-300'
+                                    }`}
+                                  >
+                                    {Object.entries(TYPE_CONFIG).map(([key, config]) => (
+                                      <option key={key} value={key}>{config.label}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="col-span-5">
+                                  <input 
+                                    type="text" 
+                                    value={item.label} 
+                                    onChange={(e) => handleItemChange(index, 'label', e.target.value)}
+                                    className={`w-full p-1.5 rounded border text-sm ${
+                                      appData.isDarkMode 
+                                        ? 'bg-slate-700 border-slate-600 text-slate-100' 
+                                        : 'bg-white border-slate-300'
+                                    }`}
+                                  />
+                                </div>
+                                <div className="col-span-1 text-center">
+                                  {index !== 0 && (
+                                    <button onClick={() => deleteItem(index)} className="text-slate-400 hover:text-red-500"><Trash2 size={16} /></button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <button 
+                            onClick={addNewItem} 
+                            className={`w-full mt-4 py-2 border-2 border-dashed rounded text-sm transition-colors flex items-center justify-center gap-1 ${
+                              appData.isDarkMode
+                                ? 'border-slate-700 text-slate-400 hover:border-blue-500 hover:text-blue-400'
+                                : 'border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600'
+                            }`}
+                          >
+                            <Plus size={16} /> 行を追加
+                          </button>
+                          <p className={`text-xs mt-2 text-center ${subTextClass}`}>※始業前の開始時間は、次の予定の1時間前に自動設定されます。</p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className={`flex-grow flex items-center justify-center text-sm ${subTextClass}`}>左側のリストから「編集」を選択してください</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
